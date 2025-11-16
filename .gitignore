@@ -1,0 +1,67 @@
+# macOS
+.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*~            # temp/backup files
+
+# Environment / secrets
+.env
+*.env
+*.key
+*.pem
+
+# Delphi / RAD Studio
+*.dcu
+*.dcp
+*.bpl
+*.dsk
+*.dproj.user
+*.dproj.local
+*.dproj
+*.identcache
+*.tds
+*.~dfm
+*.~pas
+*.cfg
+*.local
+
+# Compiled binaries and intermediate objects
+*.exe
+*.dll
+*.lib
+*.obj
+*.o
+*.map
+*.res
+*.pch
+*.exe.manifest
+
+# Build folders
+_build/
+build/
+bin/
+obj/
+Debug/
+Release/
+Output/
+$(BDSCOMMONDIR)/
+$(BDSINCLUDE)/
+$(BDSLIB)/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+*.bak
+
+# Version control and OS Meta
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Optional: package manager / tooling
+node_modules/
