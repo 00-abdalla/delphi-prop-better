@@ -65,3 +65,39 @@ Desktop.ini
 
 # Optional: package manager / tooling
 node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+poetry.lock
+
+# Models
+models/*.txt
+models/*.lgb
+models/*.pkl
+
+# Data
+data/
+*.csv
+*.json
+*.parquet
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

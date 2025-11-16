@@ -1,0 +1,51 @@
+[tool.poetry]
+name = "delphi"
+version = "0.1.0"
+description = "Delphi - NBA Player Prop Prediction System"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "backend"}, {include = "data_pipeline"}, {include = "ml"}, {include = "discord_bot"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+sqlalchemy = "^2.0.25"
+psycopg2-binary = "^2.9.9"
+alembic = "^1.13.1"
+pydantic = "^2.5.3"
+pydantic-settings = "^2.1.0"
+lightgbm = "^4.2.0"
+numpy = "^1.26.3"
+pandas = "^2.1.4"
+scikit-learn = "^1.4.0"
+scipy = "^1.11.4"
+discord-py = "^2.3.2"
+httpx = "^0.26.0"
+redis = "^5.0.1"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.4"
+pytest-asyncio = "^0.23.3"
+black = "^23.12.1"
+ruff = "^0.1.11"
+mypy = "^1.8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
