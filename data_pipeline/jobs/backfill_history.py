@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from backend.app.db import SessionLocal
 from backend.app.db.models import BoxScore, Game, Player, StatType, Team
 from backend.app.logging_config import get_logger
-from data_pipeline.ingestion.nba_mock_provider import NBAMockProvider
+from data_pipeline.ingestion.provider_factory import get_nba_provider
+from data_pipeline.transform.feature_engineering import FeatureEngineer
 
 logger = get_logger(__name__)
 
@@ -18,7 +19,7 @@ def main():
     logger.info("Starting historical data backfill")
     
     db = SessionLocal()
-    provider = NBAMockProvider()
+    provider = get_nba_provider()
     
     try:
         # Insert stat types first
@@ -85,8 +86,8 @@ def main():
         db.commit()
         logger.info(f"Inserted {len(player_map)} players")
         
-        # Insert games and box scores for last 90 days
-        start_date = date.today() - timedelta(days=90)
+        # Insert games and box scores for last 7 days (change to 90 for full backfill)
+        start_date = date.today() - timedelta(days=7)
         end_date = date.today() - timedelta(days=1)
         
         logger.info(f"Inserting games from {start_date} to {end_date}...")
@@ -155,10 +156,27 @@ def main():
                     free_throws_attempted=box_score_data.get("free_throws_attempted"),
                 )
                 db.add(box_score)
-        
         db.commit()
         logger.info(f"Inserted box scores")
         
+        # Generate features for all completed games
+        logger.info("Generating features for completed games...")
+        feature_engineer = FeatureEngineer(db)
+        
+        # Get all game dates with status='final'
+        completed_games = (
+            db.query(Game.game_date)
+            .filter(Game.status == "final")
+            .distinct()
+            .order_by(Game.game_date)
+            .all()
+        )
+        
+        for (game_date,) in completed_games:
+            logger.info(f"Generating features for {game_date}")
+            feature_engineer.build_player_game_features_for_date(game_date)
+        
+        logger.info(f"Generated features for {len(completed_games)} game dates")
         logger.info("Historical data backfill complete")
     
     except Exception as e:

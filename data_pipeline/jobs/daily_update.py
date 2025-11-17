@@ -10,8 +10,8 @@ from backend.app.db import SessionLocal
 from backend.app.db.models import Game, InjuryReport, OddsSnapshot, Player, Prop, StatType, Team
 from backend.app.logging_config import get_logger
 from data_pipeline.ingestion.injuries_mock_provider import InjuriesMockProvider
-from data_pipeline.ingestion.nba_mock_provider import NBAMockProvider
 from data_pipeline.ingestion.odds_mock_provider import OddsMockProvider
+from data_pipeline.ingestion.provider_factory import get_nba_provider
 from data_pipeline.transform.feature_engineering import FeatureEngineer
 from ml.inference.model_registry import ModelRegistry
 from ml.inference.scorer import PropScorer
@@ -28,7 +28,7 @@ def main():
     
     try:
         # Initialize providers
-        nba_provider = NBAMockProvider()
+        nba_provider = get_nba_provider()
         odds_provider = OddsMockProvider()
         injury_provider = InjuriesMockProvider()
         

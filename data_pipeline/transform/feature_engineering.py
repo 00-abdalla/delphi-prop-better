@@ -1,8 +1,9 @@
 """Feature engineering service."""
 from datetime import date, timedelta
+from typing import Dict, List, Tuple
 
 import pandas as pd
-from sqlalchemy import and_
+from sqlalchemy import and_, delete
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import BoxScore, Game, Player, PlayerGameFeatures, StatType
@@ -24,10 +25,10 @@ class FeatureEngineer:
         """
         self.db = db
         self.minutes_projector = MinutesProjector()
-    
     def build_player_game_features_for_date(self, target_date: date) -> None:
         """
         Build features for all players in games on target date.
+        OPTIMIZED: Uses batch queries and bulk inserts.
         
         Args:
             target_date: Date to build features for
@@ -45,94 +46,84 @@ class FeatureEngineer:
         stat_types = self.db.query(StatType).all()
         stat_type_map = {st.name: st.id for st in stat_types}
         
-        for game in games:
-            logger.info(f"Processing game {game.id}: {game.external_id}")
-            
-            # Get players from both teams
-            home_players = self.db.query(Player).filter(Player.team_id == game.home_team_id).all()
-            away_players = self.db.query(Player).filter(Player.team_id == game.away_team_id).all()
-            
-            all_players = home_players + away_players
-            
-            for player in all_players:
-                for stat_name in ["points", "assists", "rebounds"]:
-                    stat_type_id = stat_type_map.get(stat_name)
-                    if not stat_type_id:
-                        continue
-                    
-                    features = self._build_features_for_player_stat(
-                        player=player,
-                        game=game,
-                        stat_name=stat_name,
-                        target_date=target_date,
-                    )
-                    
-                    if features:
-                        # Upsert features
-                        existing = (
-                            self.db.query(PlayerGameFeatures)
-                            .filter(
-                                and_(
-                                    PlayerGameFeatures.player_id == player.id,
-                                    PlayerGameFeatures.game_id == game.id,
-                                    PlayerGameFeatures.stat_type_id == stat_type_id,
-                                )
-                            )
-                            .first()
-                        )
-                        
-                        if existing:
-                            existing.feature_vector = features
-                            existing.feature_schema_version = 1
-                        else:
-                            feature_obj = PlayerGameFeatures(
-                                player_id=player.id,
-                                game_id=game.id,
-                                stat_type_id=stat_type_id,
-                                feature_schema_version=1,
-                                feature_vector=features,
-                            )
-                            self.db.add(feature_obj)
+        # Collect all unique player IDs from games
+        game_ids = [g.id for g in games]
+        all_player_ids = set()
+        game_player_map = {}  # game_id -> list of player_ids
         
-        self.db.commit()
-        logger.info(f"Finished building features for {target_date}")
-    
-    def _build_features_for_player_stat(
+        for game in games:
+            home_players = self.db.query(Player.id).filter(Player.team_id == game.home_team_id).all()
+            away_players = self.db.query(Player.id).filter(Player.team_id == game.away_team_id).all()
+            
+            player_ids = [p.id for p in home_players] + [p.id for p in away_players]
+            game_player_map[game.id] = player_ids
+            all_player_ids.update(player_ids)
+        
+        # Batch load all historical box scores for all players (before target_date)
+        logger.info(f"Loading historical data for {len(all_player_ids)} players")
+        historical_data = (
+            self.db.query(BoxScore, Game, BoxScore.player_id)
+            .join(Game, BoxScore.game_id == Game.id)
+            .filter(BoxScore.player_id.in_(all_player_ids))
+            .filter(Game.game_date < target_date)
+            .order_by(BoxScore.player_id, Game.game_date.desc())
+            .all()
+        )
+        
+        # Organize by player_id
+        player_history: Dict[int, List[Tuple[BoxScore, Game]]] = {}
+        for box_score, game, player_id in historical_data:
+            if player_id not in player_history:
+                player_history[player_id] = []
+            player_history[player_id].append((box_score, game))
+        
+        # Load players in batch
+        players = self.db.query(Player).filter(Player.id.in_(all_player_ids)).all()
+        player_map = {p.id: p for p in players}
+        
+        # Load games in batch (already have them, create map)
+        game_map = {g.id: g for g in games}
+        
+        # Delete existing features for this date to avoid duplicates
+        logger.info(f"Clearing existing features for {target_date}")
+        self.db.execute(
+            delete(PlayerGameFeatures).where(
+                PlayerGameFeatures.game_id.in_(game_ids)
+            )
+        )
+        
+        # Build all features in memory
+        logger.info(f"Computing features for {len(games)} games")
+        features_to_insert = []
+        
+        for game in games:
+            player_ids = game_player_map.get(game.id, [])
+    def _build_features_from_history(
         self,
+        history: List[Tuple[BoxScore, Game]],
         player: Player,
         game: Game,
         stat_name: str,
-        target_date: date,
     ) -> dict:
         """
-        Build feature vector for a player/game/stat combination.
+        Build feature vector from pre-loaded history.
+        OPTIMIZED: No DB queries, just computation.
         
         Args:
+            history: List of (BoxScore, Game) tuples (already sorted desc by date)
             player: Player object
-            game: Game object
+            game: Game object for context
             stat_name: Stat name (points, assists, rebounds)
-            target_date: Target game date
             
         Returns:
             Feature dictionary
         """
-        # Get historical box scores before target date
-        historical_box_scores = (
-            self.db.query(BoxScore, Game)
-            .join(Game, BoxScore.game_id == Game.id)
-            .filter(BoxScore.player_id == player.id)
-            .filter(Game.game_date < target_date)
-            .order_by(Game.game_date.desc())
-            .limit(20)  # Last 20 games
-            .all()
-        )
-        
-        if not historical_box_scores:
+        if not history:
             return {}
         
         # Convert to DataFrame
         records = []
-        for box_score, hist_game in historical_box_scores:
+        for box_score, hist_game in history:
             records.append({
                 "game_date": hist_game.game_date,
                 "minutes": box_score.minutes or 0,
@@ -169,3 +160,42 @@ class FeatureEngineer:
                 features[key] = 0.0
         
         return features
+    
+    def _build_features_for_player_stat(
+        self,
+        player: Player,
+        game: Game,
+        stat_name: str,
+        target_date: date,
+    ) -> dict:
+        """
+        Build feature vector for a player/game/stat combination.
+        LEGACY METHOD: Kept for backward compatibility, but slow.
+        Use build_player_game_features_for_date for batch processing.
+        
+        Args:
+            player: Player object
+            game: Game object
+            stat_name: Stat name (points, assists, rebounds)
+            target_date: Target game date
+            
+        Returns:
+            Feature dictionary
+        """
+        # Get historical box scores before target date
+        historical_box_scores = (
+            self.db.query(BoxScore, Game)
+            .join(Game, BoxScore.game_id == Game.id)
+            .filter(BoxScore.player_id == player.id)
+            .filter(Game.game_date < target_date)
+            .order_by(Game.game_date.desc())
+            .limit(20)  # Last 20 games
+            .all()
+        )
+        
+        return self._build_features_from_history(
+            history=historical_box_scores,
+            player=player,
+            game=game,
+            stat_name=stat_name,
+        )

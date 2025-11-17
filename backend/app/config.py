@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Models
     MODEL_DIR: str = "./models"
     
+    # Data Providers
+    USE_REAL_NBA_DATA: bool = True  # Toggle between mock and real NBA data
+    NBA_API_RATE_LIMIT: int = 18  # Calls per minute for NBA API
+    
     # Logging
     LOG_LEVEL: str = "INFO"
     
